@@ -54,6 +54,10 @@ class backend {
     virtual void conv2d(const std::vector<tensor_t*>& in_data,
                         std::vector<tensor_t*>&       out_data) = 0;
 
+    virtual void q_conv2d(cnn_size_t                 index,
+                          const std::vector<vec_t*>& in_data,
+                          std::vector<vec_t*>&       out_data) = 0;
+
     virtual void conv2d(const std::vector<tensor_t*>& in_data,
                         const std::vector<tensor_t*>& out_data,
                         std::vector<tensor_t*>&       out_grad,

@@ -131,6 +131,21 @@ class tiny_backend : public backend {
         }
     }
 
+    void q_conv2d(cnn_size_t                 index,
+                  const std::vector<vec_t*>& in_data,
+                  std::vector<vec_t*>&       out_data) {
+        copy_and_pad_input(*in_data[0], static_cast<int>(index));
+        const vec_t& W    = *in_data[1];
+        const vec_t& bias = *in_data[2];
+        vec_t&       a    = *out_data[1];
+        const vec_t &in   = *((*conv_layer_worker_storage_)[index].prev_out_padded_); // input // NOLINT
+
+        std::fill(a.begin(), a.end(), float_t(0));
+
+        kernels::tiny_quantized_conv2d_kernel(*params_c_,
+            in, W, bias, a, layer_->get_parallelize());
+    }
+
     void deconv2d(const std::vector<tensor_t*>&  in_data,
                   std::vector<tensor_t*>&        out_data) {
         (*deconv_layer_worker_storage_).prev_out_ = in_data[0];

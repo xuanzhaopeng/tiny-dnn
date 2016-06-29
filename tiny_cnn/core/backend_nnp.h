@@ -92,6 +92,12 @@ class nnp_backend : public backend {
         throw nn_error("NNPACK does not support back propagation.");
     }
 
+    void q_conv2d(cnn_size_t                 index,
+                  const std::vector<vec_t*>& in_data,
+                  std::vector<vec_t*>&       out_data) {
+        throw nn_error("NNPACK haven't implemented.");
+    }
+
     void deconv2d(const std::vector<tensor_t*>& in_data,
                   std::vector<tensor_t*>&       out_data) {
         /*if (!params_d_->has_bias) {
