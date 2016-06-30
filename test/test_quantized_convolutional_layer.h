@@ -32,7 +32,7 @@
 namespace tiny_cnn {
 
 TEST(quantized_convolutional, setup_tiny) {
-    convolutional_layer<sigmoid> l(5, 5, 3, 1, 2,
+    quantized_convolutional_layer<sigmoid> l(5, 5, 3, 1, 2,
         padding::valid, true, 1, 1, backend_t::tiny_cnn);
 
     EXPECT_EQ(l.get_parallelize(), true);       // if layer can be parallelized
@@ -50,32 +50,12 @@ TEST(quantized_convolutional, setup_tiny) {
     EXPECT_EQ(l.out_types().size(), 2);         // num of output data types
     EXPECT_EQ(l.fan_in_size(), 9);              // num of incoming connections
     EXPECT_EQ(l.fan_out_size(), 18);            // num of outgoing connections
-    EXPECT_STREQ(l.layer_type().c_str(), "conv");  // string with layer type
+    EXPECT_STREQ(l.layer_type().c_str(), "q_conv");  // string with layer type
     EXPECT_TRUE(l.get_backend_type() == backend_t::tiny_cnn);
 }
 
 #ifdef CNN_USE_NNPACK
-TEST(quantized_convolutional, setup_nnp) {
-    convolutional_layer<sigmoid> l(5, 5, 3, 1, 2,
-        padding::valid, true, 1, 1, backend_t::nnpack);
-
-    EXPECT_EQ(l.get_parallelize(), true);       // if layer can be parallelized
-    EXPECT_EQ(l.in_channels(), 3);              // num of input tensors
-    EXPECT_EQ(l.out_channels(), 2);             // num of output tensors
-    EXPECT_EQ(l.in_data_size(), 25);            // size of input tensors
-    EXPECT_EQ(l.out_data_size(), 18);           // size of output tensors
-    EXPECT_EQ(l.in_data_shape().size(), 1);     // number of inputs shapes
-    EXPECT_EQ(l.out_data_shape().size(), 1);    // num of output shapes
-    EXPECT_EQ(l.get_weights().size(), 2);       // the wieghts vector size
-    EXPECT_EQ(l.get_weight_grads().size(), 2);  // the wieghts vector size
-    EXPECT_EQ(l.get_inputs().size(), 3);        // num of input edges
-    EXPECT_EQ(l.get_outputs().size(), 2);       // num of outpus edges
-    EXPECT_EQ(l.in_types().size(), 3);          // num of input data types
-    EXPECT_EQ(l.out_types().size(), 2);         // num of output data types
-    EXPECT_EQ(l.fan_in_size(), 9);              // num of incoming connections
-    EXPECT_EQ(l.fan_out_size(), 18);            // num of outgoing connections
-    EXPECT_STREQ(l.layer_type().c_str(), "conv");  // string with layer type
-    EXPECT_TRUE(l.get_backend_type() == backend_t::nnpack);
+TEST(quantized_deconvolutional, setup_nnp) {
 }
 #endif
 
@@ -98,11 +78,11 @@ TEST(quantized_convolutional, fprop) {
     out_data.push_back(&out);
     out_data.push_back(&a);
     l.setup(false, 1);
-    {/*
+    {
         l.forward_propagation(0, in_data, out_data);
 
         for (auto o: out)
-            EXPECT_DOUBLE_EQ(o, (tiny_cnn::float_t)0.5);*/
+            EXPECT_DOUBLE_EQ(o, (tiny_cnn::float_t)0.5);
     }
 
     weight[0] = 0.3;  weight[1] = 0.1; weight[2] = 0.2;
@@ -139,7 +119,7 @@ TEST(quantized_convolutional, fprop_nnp) {
     typedef network<sequential> CNN;
     CNN nn;
 
-    convolutional_layer<sigmoid> l(5, 5, 3, 1, 2,
+    quantized_convolutional_layer<sigmoid> l(5, 5, 3, 1, 2,
         padding::valid, true, 1, 1, core::backend_t::nnpack);
 
     vec_t in(25), out(18), a(18), weight(18), bias(2);
@@ -191,10 +171,10 @@ TEST(quantized_convolutional, fprop_nnp) {
     }
 }
 #endif
-
+/*
 TEST(quantized_convolutional, gradient_check) { // tanh - mse
     network<sequential> nn;
-    nn << convolutional_layer<tan_h>(5, 5, 3, 1, 1);
+    nn << quantized_convolutional_layer<tan_h>(5, 5, 3, 1, 1);
 
     vec_t a(25, 0.0);
     label_t t = 3;
@@ -206,7 +186,7 @@ TEST(quantized_convolutional, gradient_check) { // tanh - mse
 
 TEST(quantized_convolutional, gradient_check2) { // sigmoid - mse
     network<sequential> nn;
-    nn << convolutional_layer<sigmoid>(5, 5, 3, 1, 1);
+    nn << quantized_convolutional_layer<sigmoid>(5, 5, 3, 1, 1);
 
     vec_t a(25, 0.0);
     label_t t = 3;
@@ -219,7 +199,7 @@ TEST(quantized_convolutional, gradient_check2) { // sigmoid - mse
 TEST(quantized_convolutional, gradient_check3) { // rectified - mse
     network<sequential> nn;
 
-    nn << convolutional_layer<rectified_linear>(5, 5, 3, 1, 1);
+    nn << quantized_convolutional_layer<rectified_linear>(5, 5, 3, 1, 1);
 
     vec_t a(25, 0.0);
     label_t t = 3;
@@ -232,7 +212,7 @@ TEST(quantized_convolutional, gradient_check3) { // rectified - mse
 TEST(quantized_convolutional, gradient_check4) { // identity - mse
     network<sequential> nn;
 
-    nn << convolutional_layer<identity>(5, 5, 3, 1, 1);
+    nn << quantized_convolutional_layer<identity>(5, 5, 3, 1, 1);
 
     vec_t a(25, 0.0);
     label_t t = 3;
@@ -245,7 +225,7 @@ TEST(quantized_convolutional, gradient_check4) { // identity - mse
 TEST(quantized_convolutional, gradient_check5) { // sigmoid - cross-entropy
     network<sequential> nn;
 
-    nn << convolutional_layer<sigmoid>(5, 5, 3, 1, 1);
+    nn << quantized_convolutional_layer<sigmoid>(5, 5, 3, 1, 1);
 
     vec_t a(25, 0.0);
     label_t t = 3;
@@ -257,8 +237,8 @@ TEST(quantized_convolutional, gradient_check5) { // sigmoid - cross-entropy
 
 TEST(quantized_convolutional, read_write)
 {
-    convolutional_layer<tan_h> l1(5, 5, 3, 1, 1);
-    convolutional_layer<tan_h> l2(5, 5, 3, 1, 1);
+    quantized_convolutional_layer<tan_h> l1(5, 5, 3, 1, 1);
+    quantized_convolutional_layer<tan_h> l2(5, 5, 3, 1, 1);
 
     l1.init_weight();
     l2.init_weight();
@@ -276,12 +256,12 @@ TEST(quantized_convolutional, read_write2) {
     };
 #undef O
 #undef X
-    convolutional_layer<tan_h> layer1(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
-    convolutional_layer<tan_h> layer2(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
+    quantized_convolutional_layer<tan_h> layer1(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
+    quantized_convolutional_layer<tan_h> layer2(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
     layer1.init_weight();
     layer2.init_weight();
 
     serialization_test(layer1, layer2);
 }
-
+*/
 } // namespace tiny-cnn

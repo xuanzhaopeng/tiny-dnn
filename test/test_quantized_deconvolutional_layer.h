@@ -31,8 +31,8 @@
 
 namespace tiny_cnn {
 
-TEST(deconvolutional, setup_tiny) {
-    deconvolutional_layer<sigmoid> l(2, 2, 3, 1, 2,
+TEST(quantized_deconvolutional, setup_tiny) {
+    quantized_deconvolutional_layer<sigmoid> l(2, 2, 3, 1, 2,
         padding::valid, true, 1, 1, backend_t::tiny_cnn);
 
     EXPECT_EQ(l.get_parallelize(), true);       // if layer can be parallelized
@@ -50,13 +50,13 @@ TEST(deconvolutional, setup_tiny) {
     EXPECT_EQ(l.out_types().size(), 2);         // num of output data types
     EXPECT_EQ(l.fan_in_size(), 9);              // num of incoming connections
     EXPECT_EQ(l.fan_out_size(), 18);            // num of outgoing connections
-    EXPECT_STREQ(l.layer_type().c_str(), "deconv");  // string with layer type
+    EXPECT_STREQ(l.layer_type().c_str(), "q_deconv");  // string with layer type
     EXPECT_TRUE(l.get_backend_type() == backend_t::tiny_cnn);
 }
 
 #ifdef CNN_USE_NNPACK
-TEST(deconvolutional, setup_nnp) {
-    deconvolutional_layer<sigmoid> l(2, 2, 3, 1, 2,
+TEST(quantized_deconvolutional, setup_nnp) {
+    quantized_deconvolutional_layer<sigmoid> l(2, 2, 3, 1, 2,
         padding::valid, true, 1, 1, backend_t::nnpack);
 
     EXPECT_EQ(l.get_parallelize(), true);       // if layer can be parallelized
@@ -74,47 +74,32 @@ TEST(deconvolutional, setup_nnp) {
     EXPECT_EQ(l.out_types().size(), 2);         // num of output data types
     EXPECT_EQ(l.fan_in_size(), 9);              // num of incoming connections
     EXPECT_EQ(l.fan_out_size(), 18);            // num of outgoing connections
-    EXPECT_STREQ(l.layer_type().c_str(), "deconv");  // string with layer type
+    EXPECT_STREQ(l.layer_type().c_str(), "q_deconv");  // string with layer type
     EXPECT_TRUE(l.get_backend_type() == backend_t::nnpack);
 }
 #endif
 
-TEST(deconvolutional, fprop) {
+TEST(quantized_deconvolutional, fprop) {
     typedef network<sequential> CNN;
     CNN nn;
 
-    deconvolutional_layer<sigmoid> l(2, 2, 3, 1, 2);
+    quantized_deconvolutional_layer<sigmoid> l(2, 2, 3, 1, 2);
 
-    // layer::forward_propagation expects tensors, even if we feed only one input at a time
-    auto create_simple_tensor = [](size_t vector_size) {
-        return tensor_t(1, vec_t(vector_size));
-    };
-
-    // create simple tensors that wrap the payload vectors of the correct size
-    tensor_t in_tensor     = create_simple_tensor(4)
-           , out_tensor    = create_simple_tensor(32)
-           , a_tensor      = create_simple_tensor(32)
-           , weight_tensor = create_simple_tensor(18)
-           , bias_tensor   = create_simple_tensor(2);
-
-    // short-hand references to the payload vectors
-    vec_t &in     = in_tensor[0]
-        , &out    = out_tensor[0]
-        , &weight = weight_tensor[0];
+    vec_t in(4), out(32), a(32), weight(18), bias(2);
 
     ASSERT_EQ(l.in_shape()[1].size(), 18); // weight
 
     uniform_rand(in.begin(), in.end(), -1.0, 1.0);
 
-    std::vector<tensor_t*> in_data, out_data;
-    in_data.push_back(&in_tensor);
-    in_data.push_back(&weight_tensor);
-    in_data.push_back(&bias_tensor);
-    out_data.push_back(&out_tensor);
-    out_data.push_back(&a_tensor);
-    l.setup(false);
+    std::vector<vec_t*> in_data, out_data;
+    in_data.push_back(&in);
+    in_data.push_back(&weight);
+    in_data.push_back(&bias);
+    out_data.push_back(&out);
+    out_data.push_back(&a);
+    l.setup(false, 1);
     {
-        l.forward_propagation(in_data, out_data);
+        l.forward_propagation(0, in_data, out_data);
 
         for (auto o: out)
             EXPECT_DOUBLE_EQ(o, (tiny_cnn::float_t)0.5);
@@ -132,88 +117,94 @@ TEST(deconvolutional, fprop) {
     in[2] = 3;  in[3] = 0;
 
     {
-        l.forward_propagation(in_data, out_data);
+        l.forward_propagation(0, in_data, out_data);
 
-        EXPECT_NEAR(0.7109495, out[0], 1E-5);
-        EXPECT_NEAR(0.7109495, out[1], 1E-5);
-        EXPECT_NEAR(0.6899745, out[2], 1E-5);
-        EXPECT_NEAR(0.5986877, out[3], 1E-5);
-        EXPECT_NEAR(0.7109495, out[4], 1E-5);
-        EXPECT_NEAR(0.5000000, out[5], 1E-5);
-        EXPECT_NEAR(0.5249792, out[6], 1E-5);
-        EXPECT_NEAR(0.4501660, out[7], 1E-5);
-        EXPECT_NEAR(0.5374298, out[8], 1E-5);
-        EXPECT_NEAR(0.3100255, out[9], 1E-5);
-        EXPECT_NEAR(0.3658644, out[10], 1E-5);
-        EXPECT_NEAR(0.5249791, out[11], 1E-5);
-        EXPECT_NEAR(0.5374298, out[12], 1E-5);
-        EXPECT_NEAR(0.3543437, out[13], 1E-5);
-        EXPECT_NEAR(0.5374298, out[14], 1E-5);
-        EXPECT_NEAR(0.5000000, out[15], 1E-5);
+        EXPECT_NEAR(0.7109495, out[0], 1E-2);
+        EXPECT_NEAR(0.7109495, out[1], 1E-2);
+        EXPECT_NEAR(0.6899745, out[2], 1E-2);
+        EXPECT_NEAR(0.5986877, out[3], 1E-2);
+        EXPECT_NEAR(0.7109495, out[4], 1E-2);
+        EXPECT_NEAR(0.5000000, out[5], 1E-2);
+        EXPECT_NEAR(0.5249792, out[6], 1E-2);
+        EXPECT_NEAR(0.4501660, out[7], 1E-2);
+        EXPECT_NEAR(0.5374298, out[8], 1E-2);
+        EXPECT_NEAR(0.3100255, out[9], 1E-2);
+        EXPECT_NEAR(0.3658644, out[10], 1E-2);
+        EXPECT_NEAR(0.5249791, out[11], 1E-2);
+        EXPECT_NEAR(0.5374298, out[12], 1E-2);
+        EXPECT_NEAR(0.3543437, out[13], 1E-2);
+        EXPECT_NEAR(0.5374298, out[14], 1E-2);
+        EXPECT_NEAR(0.5000000, out[15], 1E-2);
     }
 }
-
-TEST(deconvolutional, gradient_check) { // tanh - mse
+/*
+TEST(quantized_deconvolutional, gradient_check) { // tanh - mse
     network<sequential> nn;
-    nn << deconvolutional_layer<tan_h>(2, 2, 3, 1, 1);
+    nn << quantized_deconvolutional_layer<tan_h>(5, 5, 3, 1, 1);
 
-    vec_t a(4, 0.0);
+    vec_t a(25, 0.0);
     label_t t = 3;
 
-    const auto test_data = generate_gradient_check_data(nn.in_data_size());
+    uniform_rand(a.begin(), a.end(), -1, 1);
     nn.init_weight();
-    EXPECT_TRUE(nn.gradient_check<mse>(test_data.first, test_data.second, epsilon<float_t>(), GRAD_CHECK_ALL));
+    EXPECT_TRUE(nn.gradient_check<mse>(&a, &t, 1, epsilon<float_t>(), GRAD_CHECK_ALL));
 }
 
-TEST(deconvolutional, gradient_check2) { // sigmoid - mse
+TEST(quantized_deconvolutional, gradient_check2) { // sigmoid - mse
     network<sequential> nn;
-    nn << deconvolutional_layer<sigmoid>(2, 2, 3, 1, 1);
+    nn << quantized_deconvolutional_layer<sigmoid>(5, 5, 3, 1, 1);
 
-    const auto test_data = generate_gradient_check_data(nn.in_data_size());
-    nn.init_weight();
-    EXPECT_TRUE(nn.gradient_check<mse>(test_data.first, test_data.second, epsilon<float_t>(), GRAD_CHECK_ALL));
-}
-
-TEST(deconvolutional, gradient_check3) { // rectified - mse
-    network<sequential> nn;
-
-    nn << deconvolutional_layer<rectified_linear>(2, 2, 3, 1, 1);
-
-    vec_t a(4, 0.0);
+    vec_t a(25, 0.0);
     label_t t = 3;
 
-    const auto test_data = generate_gradient_check_data(nn.in_data_size());
+    uniform_rand(a.begin(), a.end(), -1, 1);
     nn.init_weight();
-    EXPECT_TRUE(nn.gradient_check<mse>(test_data.first, test_data.second, epsilon<float_t>(), GRAD_CHECK_ALL));
+    EXPECT_TRUE(nn.gradient_check<mse>(&a, &t, 1, epsilon<float_t>(), GRAD_CHECK_ALL));
 }
 
-TEST(deconvolutional, gradient_check4) { // identity - mse
+TEST(quantized_deconvolutional, gradient_check3) { // rectified - mse
     network<sequential> nn;
 
-    nn << deconvolutional_layer<identity>(2, 2, 3, 1, 1);
+    nn << quantized_deconvolutional_layer<rectified_linear>(5, 5, 3, 1, 1);
 
-    vec_t a(4, 0.0);
+    vec_t a(25, 0.0);
     label_t t = 3;
 
-    const auto test_data = generate_gradient_check_data(nn.in_data_size());
+    uniform_rand(a.begin(), a.end(), -1, 1);
     nn.init_weight();
-    EXPECT_TRUE(nn.gradient_check<mse>(test_data.first, test_data.second, epsilon<float_t>(), GRAD_CHECK_ALL));
+    EXPECT_TRUE(nn.gradient_check<mse>(&a, &t, 1, epsilon<float_t>(), GRAD_CHECK_ALL));
 }
 
-TEST(deconvolutional, gradient_check5) { // sigmoid - cross-entropy
+TEST(quantized_deconvolutional, gradient_check4) { // identity - mse
     network<sequential> nn;
 
-    nn << deconvolutional_layer<sigmoid>(2, 2, 3, 1, 1);
+    nn << quantized_deconvolutional_layer<identity>(5, 5, 3, 1, 1);
 
-    const auto test_data = generate_gradient_check_data(nn.in_data_size());
+    vec_t a(25, 0.0);
+    label_t t = 3;
+
+    uniform_rand(a.begin(), a.end(), -1, 1);
     nn.init_weight();
-    EXPECT_TRUE(nn.gradient_check<cross_entropy>(test_data.first, test_data.second, epsilon<float_t>(), GRAD_CHECK_ALL));
+    EXPECT_TRUE(nn.gradient_check<mse>(&a, &t, 1, epsilon<float_t>(), GRAD_CHECK_ALL));
 }
 
-TEST(deconvolutional, read_write)
+TEST(quantized_deconvolutional, gradient_check5) { // sigmoid - cross-entropy
+    network<sequential> nn;
+
+    nn << quantized_deconvolutional_layer<sigmoid>(5, 5, 3, 1, 1);
+
+    vec_t a(25, 0.0);
+    label_t t = 3;
+
+    uniform_rand(a.begin(), a.end(), -1, 1);
+    nn.init_weight();
+    EXPECT_TRUE(nn.gradient_check<cross_entropy>(&a, &t, 1, epsilon<float_t>(), GRAD_CHECK_ALL));
+}
+
+TEST(quantized_deconvolutional, read_write)
 {
-    deconvolutional_layer<tan_h> l1(2, 2, 3, 1, 1);
-    deconvolutional_layer<tan_h> l2(2, 2, 3, 1, 1);
+    quantized_deconvolutional_layer<tan_h> l1(5, 5, 3, 1, 1);
+    quantized_deconvolutional_layer<tan_h> l2(5, 5, 3, 1, 1);
 
     l1.init_weight();
     l2.init_weight();
@@ -221,7 +212,7 @@ TEST(deconvolutional, read_write)
     serialization_test(l1, l2);
 }
 
-TEST(deconvolutional, read_write2) {
+TEST(quantized_deconvolutional, read_write2) {
 #define O true
 #define X false
     static const bool connection[] = {
@@ -231,13 +222,12 @@ TEST(deconvolutional, read_write2) {
     };
 #undef O
 #undef X
-    deconvolutional_layer<tan_h> layer1(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
-    deconvolutional_layer<tan_h> layer2(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
+    quantized_deconvolutional_layer<tan_h> layer1(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
+    quantized_deconvolutional_layer<tan_h> layer2(14, 14, 5, 3, 6, connection_table(connection, 3, 6));
     layer1.init_weight();
     layer2.init_weight();
 
     serialization_test(layer1, layer2);
-}
-
+}*/
 
 } // namespace tiny-cnn
