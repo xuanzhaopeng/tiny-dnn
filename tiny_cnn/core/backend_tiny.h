@@ -102,37 +102,6 @@ class tiny_backend : public backend {
             in, W, bias, a, layer_->get_parallelize());
     }
 
-    void conv2d(const std::vector<tensor_t*>& in_data,
-                const std::vector<tensor_t*>& out_data,
-                std::vector<tensor_t*>&       out_grad,
-                std::vector<tensor_t*>&       in_grad) {
-        conv_layer_worker_specific_storage& cws =
-            (*conv_layer_worker_storage_);
-
-        std::vector<const vec_t*>& prev_out = cws.prev_out_padded_;
-        const vec_t& W  = (*in_data[1])[0];
-        tensor_t&    dW = *in_grad[1];
-        tensor_t&    db = *in_grad[2];
-        tensor_t&    curr_delta = *out_grad[1];
-        tensor_t*    prev_delta = (params_c_->pad_type == padding::same) ?
-                                   &cws.prev_delta_padded_ : in_grad[0];
-
-        assert(W.size() == params_c_->weight.size());
-        assert(dW[0].size() == params_c_->weight.size());
-        assert(curr_delta[0].size() ==  layer_->out_shape()[0].size());
-
-        backward_activation(*out_grad[0], *out_data[0], curr_delta);
-
-        fill_tensor(*prev_delta, float_t(0));
-
-        kernels::tiny_conv2d_back_kernel(*params_c_,
-            prev_out, W, dW, db, curr_delta, prev_delta);
-
-        if (params_c_->pad_type == padding::same) {
-            copy_and_unpad_delta(cws.prev_delta_padded_, *in_grad[0]);
-        }
-    }
-
     // quantized convolution
     void q_conv2d(cnn_size_t                 index,
                   const std::vector<vec_t*>& in_data,
@@ -165,6 +134,61 @@ class tiny_backend : public backend {
         copy_and_unpad_output(a);
     }
 
+    // efficient quantization without abundant quantization/dequantization
+    void q_conv2d(cnn_size_t                                index,
+                  const std::vector<std::vector<uint8_t>*>& in_data,
+                  const std::vector<vec_t*>&                in_range,
+                  std::vector<std::vector<uint8_t>*>&       out_data,
+                  std::vector<vec_t*>&                      out_range) {
+        // concatnated quantized network doesn't support padding now and the
+        // backend should be reimplemented
+        // copy_and_pad_input(*in_data[0], static_cast<int>(index));
+        const std::vector<uint8_t> &in   = *in_data[0]; // input // NOLINT
+        const std::vector<uint8_t>& W    = *in_data[1];
+        const std::vector<uint8_t>& bias = *in_data[2];
+        const vec_t&                in_r = *in_range[0];
+        const vec_t&                W_r  = *in_range[1];
+        const vec_t&                b_r  = *in_range[2];
+        std::vector<uint8_t>&       a    = *out_data[1];
+        vec_t&                      a_r  = *out_range[0];
+
+        std::fill(a.begin(), a.end(), uint8_t(0));
+
+        kernels::tiny_quantized_conv2d_kernel(*params_c_,
+            in, W, bias, in_r, W_r, b_r, a, a_r, layer_->get_parallelize());
+    }
+
+    void conv2d(const std::vector<tensor_t*>& in_data,
+                const std::vector<tensor_t*>& out_data,
+                std::vector<tensor_t*>&       out_grad,
+                std::vector<tensor_t*>&       in_grad) {
+        conv_layer_worker_specific_storage& cws =
+            (*conv_layer_worker_storage_);
+
+        std::vector<const vec_t*>& prev_out = cws.prev_out_padded_;
+        const vec_t& W  = (*in_data[1])[0];
+        tensor_t&    dW = *in_grad[1];
+        tensor_t&    db = *in_grad[2];
+        tensor_t&    curr_delta = *out_grad[1];
+        tensor_t*    prev_delta = (params_c_->pad_type == padding::same) ?
+                                   &cws.prev_delta_padded_ : in_grad[0];
+
+        assert(W.size() == params_c_->weight.size());
+        assert(dW[0].size() == params_c_->weight.size());
+        assert(curr_delta[0].size() ==  layer_->out_shape()[0].size());
+
+        backward_activation(*out_grad[0], *out_data[0], curr_delta);
+
+        fill_tensor(*prev_delta, float_t(0));
+
+        kernels::tiny_conv2d_back_kernel(*params_c_,
+            prev_out, W, dW, db, curr_delta, prev_delta);
+
+        if (params_c_->pad_type == padding::same) {
+            copy_and_unpad_delta(cws.prev_delta_padded_, *in_grad[0]);
+        }
+    }
+
     void deconv2d(const std::vector<tensor_t*>& in_data,
                   const std::vector<tensor_t*>& out_data,
                   std::vector<tensor_t*>&       out_grad,
@@ -195,9 +219,9 @@ class tiny_backend : public backend {
     }
 
     // quantized deconvolution
-    void q_deconv2d(cnn_size_t        index,
-        const std::vector<vec_t*>&  in_data,
-        std::vector<vec_t*>&        out_data) {
+    void q_deconv2d(cnn_size_t                  index,
+                    const std::vector<vec_t*>&  in_data,
+                    std::vector<vec_t*>&        out_data) {
         (*deconv_layer_worker_storage_)[index].prev_out_ = in_data[0];
         const vec_t& W   = *in_data[1];
         const vec_t& bias = *in_data[2];
@@ -212,6 +236,64 @@ class tiny_backend : public backend {
         copy_and_unpad_output(a, static_cast<int>(index));
     }
 
+<<<<<<< 91ee1562e3b074ee6480b12f7e174a13b1a693e5
+=======
+    // efficient quantization without abundant quantization/dequantization
+    void q_deconv2d(cnn_size_t                                index,
+                    const std::vector<std::vector<uint8_t>*>& in_data,
+                    const std::vector<vec_t*>&                in_range,
+                    std::vector<std::vector<uint8_t>*>&       out_data,
+                    std::vector<vec_t*>&                      out_range) {
+        // concatnated quantized network doesn't support unpadding now and the
+        // backend should be reimplemented
+        const std::vector<uint8_t>& in   = *in_data[0];
+        const std::vector<uint8_t>& W    = *in_data[1];
+        const std::vector<uint8_t>& bias = *in_data[2];
+        const vec_t&                in_r = *in_range[0];
+        const vec_t&                W_r  = *in_range[1];
+        const vec_t&                b_r  = *in_range[2];
+        std::vector<uint8_t>&       a    = *out_data[1];
+        vec_t&                      a_r  = *out_range[0];
+
+        std::fill(a.begin(), a.end(), uint8_t(0));
+
+        kernels::tiny_quantized_deconv2d_kernel(*params_d_,
+            in, W, bias, in_r, W_r, b_r, a, a_r, layer_->get_parallelize());
+
+        // copy_and_unpad_output(a, static_cast<int>(index));
+    }
+
+    void deconv2d(cnn_size_t                 index,
+                  const std::vector<vec_t*>& in_data,
+                  const std::vector<vec_t*>& out_data,
+                  std::vector<vec_t*>&       out_grad,
+                  std::vector<vec_t*>&       in_grad) {
+
+        deconv_layer_worker_specific_storage& cws =
+            (*deconv_layer_worker_storage_)[index];
+        if (params_d_->pad_type == padding::same)
+            copy_and_pad_delta(cws.curr_delta_padded, *in_grad[0]);
+
+        const vec_t& prev_out = *(cws.prev_out_);
+        const vec_t& W = *in_data[1];
+        vec_t&       dW = *in_grad[1];
+        vec_t&       db = *in_grad[2];
+        vec_t&       curr_delta = (params_d_->pad_type == padding::same) ? cws.curr_delta_padded : *out_grad[1];
+        vec_t*       prev_delta = in_grad[0];
+
+        assert(W.size() == params_d_->weight.size());
+        assert(dW.size() == params_d_->weight.size());
+        assert(curr_delta.size() ==  layer_->out_shape()[0].size());
+
+        backward_activation(*out_grad[0], *out_data[0], curr_delta);
+
+        std::fill(prev_delta->begin(), prev_delta->end(), float_t(0));
+
+        kernels::tiny_deconv2d_back_kernel(*params_d_,
+            prev_out, W, dW, db, curr_delta, prev_delta);
+    }
+
+>>>>>>> prototype of remove abundant quantize/dequantize ops in conv and deconv
     void matmul() {
         throw nn_error("not implemented yet.");
     }
