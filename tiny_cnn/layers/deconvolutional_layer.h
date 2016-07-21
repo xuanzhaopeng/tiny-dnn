@@ -464,6 +464,9 @@ private:
         deconv_layer_worker_specific_storage& cws =
             deconv_layer_worker_storage_;
 
+        cws.curr_out_buf_ = tensor_t(out.size(), vec_t(params_.out_unpadded.width_*
+                                     params_.out_unpadded.height_*
+                                     params_.out_unpadded.depth_,0);
         tensor_t* dst_tensor = &cws.curr_out_buf_;
 
         if (params_.pad_type == padding::valid) {
@@ -474,19 +477,19 @@ private:
                 cnn_size_t idx = 0;
                 vec_t& dst = (*dst_tensor)[sample];
 
-                for (cnn_size_t c = 0; c < params_.out.depth_; c++) {
-                    float_t *pimg = &dst[params_.out_unpadded_.get_index(0, 0, c)];
-                    idx = params_.out.get_index(params_.weight.width_ / 2,
-                        params_.weight.height_ / 2, c);
+                for (cnn_size_t c = 0; c < params_.out_unpadded.depth_; c++) {
+                    float_t *pimg = &dst[params_.out_unpadded.get_index(0, 0, c)];
+                    idx = params_.out.get_index(floor(params_.weight.width_ / 2),
+                                                floor(params_.weight.height_ / 2), c);
                     const float_t *pout = &out[sample][idx];
 
                     for (cnn_size_t y = params_.weight.height_ / 2;
                         y < params_.in.height_ - params_.weight.height_ / 2;
                         y++,
                         pout += params_.out.width_,
-                        pimg += (params_.out.width_ - params_.weight.width_ + 1)) {
+                        pimg += params_.out_unpadded.width_) {
                         std::copy(pout,
-                            pout + params_.out.width_ - params_.weight.width_ + 1,
+                            pout + params_.out_unpadded.width_,
                             pimg);
                     }
                 }
