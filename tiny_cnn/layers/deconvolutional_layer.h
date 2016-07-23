@@ -235,7 +235,7 @@ public:
             vec_t& out = (*out_data[0])[sample];
             const vec_t& a = (*out_data[1])[sample];
 
-            for (cnn_size_t i = 0; i < params_.out.size(); i++) {
+            for (cnn_size_t i = 0; i < out.size(); i++) {
                 out[i] = this->h_.f(a, i);
             };
         });

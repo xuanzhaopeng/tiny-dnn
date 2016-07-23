@@ -50,7 +50,9 @@ using namespace tiny_cnn::activation;
 #include "test_quantization.h"
 #include "test_quantized_convolutional_layer.h"
 #include "test_quantized_deconvolutional_layer.h"
+#ifdef CNN_USE_GEMMLOWP
 #include "test_quantized_fully_connected_layer.h"
+#endif
 
 #ifdef CNN_USE_CAFFE_CONVERTER
 #include "test_caffe_converter.h"

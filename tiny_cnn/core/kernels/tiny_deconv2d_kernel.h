@@ -47,12 +47,15 @@ inline void tiny_deconv2d_kernel(const deconv_params& params,
                 cnn_size_t idx = 0;
                 idx = params.in.depth_ * o + inc;
                 idx = params.weight.get_index(0, 0, idx);
+                assert(idx < W.size());
                 const float_t *pw = &W[idx];
 
                 idx = params.in.get_index(0, 0, inc);
+                assert(sample < in.size() && idx < in[sample].size());
                 const float_t *pi = &in[sample][idx];
 
                 idx = params.out.get_index(0, 0, o);
+                assert(sample < a.size() && idx < a[sample].size());
                 float_t *pa = &a[sample][idx];
 
                 for (cnn_size_t y = 0; y < params.in.height_; y++) {

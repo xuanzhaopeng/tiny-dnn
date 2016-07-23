@@ -213,7 +213,7 @@ class tiny_backend : public backend {
         tensor_t&       a    = *out_data[1];
         const tensor_t &in   = *in_data[0]; // input
 
-        fill_tensor(a, float_t(0));
+        fill_tensor(a, float_t(0), params_d_->out.size()); // deconv2d-kernel requires padded size buffer
 
         kernels::tiny_deconv2d_kernel(*params_d_,
             in, W, bias, a, layer_->get_parallelize());
@@ -231,7 +231,7 @@ class tiny_backend : public backend {
         const vec_t&    bias = (*in_data[2])[0];
         tensor_t&       a    =  *out_data[1];
 
-        fill_tensor(a, float_t(0));
+        fill_tensor(a, float_t(0), params_d_->out.size()); // deconv2d-kernel requires padded size buffer
 
         for (cnn_size_t i = 0; i < in.size(); i++) {
             kernels::tiny_quantized_deconv2d_kernel(*params_d_,
@@ -255,7 +255,7 @@ class tiny_backend : public backend {
         tensor_t&       a    = *out_data[1];
         tensor_t&       a_r  = *out_data[2];
 
-        fill_tensor(a, float_t(0));
+        fill_tensor(a, float_t(0), params_d_->out.size()); // deconv2d-kernel requires padded size buffer
 
         for (cnn_size_t i = 0; i < in.size(); i++) {
             kernels::tiny_quantized_deconv2d_kernel(*params_d_,
