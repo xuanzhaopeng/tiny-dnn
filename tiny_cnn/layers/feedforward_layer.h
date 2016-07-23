@@ -45,7 +45,7 @@ public:
     void forward_activation(tensor_t& a_tensor, tensor_t& out_tensor) {
         cnn_size_t out_dim = out_shape()[0].size();
 
-        for_i(a.size(), [&](int sample) {
+        for_i(a_tensor.size(), [&](int sample) {
             vec_t& out = a_tensor[sample];
             vec_t& a   = out_tensor[sample];
             out.resize(out_dim);

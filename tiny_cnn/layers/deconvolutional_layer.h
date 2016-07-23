@@ -347,7 +347,6 @@ private:
         if (backend) {
             Base::set_backend(backend);
             Base::backend_->set_layer(this);
-            Base::backend_->set_type(backend_type);
         } else {
             throw nn_error("Could not allocate the backend.");
         }
