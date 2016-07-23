@@ -234,14 +234,7 @@ class convolutional_layer : public feedforward_layer<Activation> {
         Base::backend_->conv2d(in_data, out_data);
 
         // activations
-        for_i(in_data[0]->size(), [&](int sample) {
-            vec_t& out     = (*out_data[0])[sample];
-            const vec_t& a = (*out_data[1])[sample];
-
-            for (cnn_size_t i = 0; i < params_.out.size(); i++) {
-                out[i] = this->h_.f(a, i);
-            };
-        });
+        forward_activation(*out_data[0], *out_data[1]);
     }
 
     /**

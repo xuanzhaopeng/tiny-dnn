@@ -93,14 +93,7 @@ public:
             Base::backend_->fully_q(in_data, out_data);
 
             // activations
-            for_i(in_data[0]->size(), [&](int sample) {
-                vec_t& out = (*out_data[0])[sample];
-                const vec_t& a = (*out_data[1])[sample];
-
-                for (cnn_size_t i = 0; i < params_.out_size_; i++) {
-                    out[i] = this->h_.f(a, i);
-                };
-            });
+            forward_activation(*out_data[0], *out_data[1]);
         } else if (in_data.size() == 4 || in_data.size() == 6) {
             Base::backend_->fully_eq(in_data, out_data);
         }
