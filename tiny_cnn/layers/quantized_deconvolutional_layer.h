@@ -207,7 +207,6 @@ public:
         : Base(std::move(other))
         , params_(std::move(other.params_))
         , backend_type_(std::move(other.backend_type_))
-        , curr_delta2_padded_(std::move(other.curr_delta2_padded_))
         , deconv_layer_worker_storage_(std::move(other.deconv_layer_worker_storage_)) {
             init_backend(std::move(Base::get_backend_type()));
     }
@@ -226,21 +225,23 @@ public:
                 params_.out.depth_;
     }
 
-    void forward_propagation(cnn_size_t                 worker_index,
-                             const std::vector<vec_t*>& in_data,
-                             std::vector<vec_t*>&       out_data) {
+    void forward_propagation(const std::vector<tensor_t*>& in_data,
+                             std::vector<tensor_t*>&       out_data) override {
         // launch deconvolutional kernel
         if (in_data.size() == 3) {
-            Base::backend_->deconv2d_q(worker_index, in_data, out_data);
-            // activations
-            vec_t& out     = *out_data[0];
-            const vec_t& a = *out_data[1];
+            Base::backend_->deconv2d_q(in_data, out_data);
 
-            for_i(this->get_parallelize(), params_.out.size(), [&](int i) {
-                out[i] = this->h_.f(a, i);
+            // activations
+            for_i(in_data[0]->size(), [&](int sample) {
+                vec_t& out = (*out_data[0])[sample];
+                const vec_t& a = (*out_data[1])[sample];
+
+                for (cnn_size_t i = 0; i < params_.out.size(); i++) {
+                    out[i] = this->h_.f(a, i);
+                };
             });
         } else if (in_data.size() == 6) {
-            Base::backend_->deconv2d_eq(worker_index, in_data, out_data);
+            Base::backend_->deconv2d_eq(in_data, out_data);
         }
     }
 
@@ -252,13 +253,11 @@ public:
      * @param out_grad     gradient of output vectors (i-th vector correspond with out_data[i])
      * @param in_grad      gradient of input vectors (i-th vector correspond with in_data[i])
      **/
-    void back_propagation(cnn_size_t                 worker_index,
-                          const std::vector<vec_t*>& in_data,
-                          const std::vector<vec_t*>& out_data,
-                          std::vector<vec_t*>&       out_grad,
-                          std::vector<vec_t*>&       in_grad) {
-        Base::backend_->deconv2d_q(worker_index, in_data, out_data,
-                                   out_grad, in_grad);
+    void back_propagation(const std::vector<tensor_t*>& in_data,
+                          const std::vector<tensor_t*>& out_data,
+                          std::vector<tensor_t*>&       out_grad,
+                          std::vector<tensor_t*>&       in_grad) override {
+        Base::backend_->deconv2d_q(in_data, out_data, out_grad, in_grad);
     }
 
     std::vector<index3d<cnn_size_t>> in_shape() const override {
@@ -315,12 +314,6 @@ public:
         return img;
     }
 
-    virtual void set_worker_count(cnn_size_t worker_count) override {
-        Base::set_worker_count(worker_count);
-        deconv_layer_worker_storage_.resize(worker_count);
-        init_workers();
-    }
-
 private:
     void init_backend(const backend_t backend_type) {
         std::shared_ptr<core::backend> backend = nullptr;
@@ -328,14 +321,14 @@ private:
         // allocate new backend
         if (backend_type == backend_t::tiny_cnn) {
             backend = std::make_shared<core::tiny_backend>(&params_,
-                [this](const vec_t& in, int worker_index) {
-                    return copy_and_unpad_output(in, worker_index);
+                [this](const tensor_t& in) {
+                    return copy_and_unpad_output(in);
                 },
-                [this](const vec_t& delta, vec_t& dst) {
+                [this](const tensor_t& delta, tensor_t& dst) {
                     return copy_and_pad_delta(delta, dst);
                 },
-                [this](const vec_t& p_delta,
-                       const vec_t& out, vec_t& c_delta) {
+                [this](const tensor_t& p_delta,
+                       const tensor_t& out, tensor_t& c_delta) {
                     return Base::backward_activation(p_delta, out, c_delta);
                 },
                 &deconv_layer_worker_storage_);
@@ -346,14 +339,14 @@ private:
 #ifdef CNN_USE_AVX
         } else if (backend_type == backend_t::avx) {
             backend = std::make_shared<core::avx_backend>(&params_,
-                [this](const vec_t& in, int worker_index) {
-                    return copy_and_unpad_output(in, worker_index);
+                [this](const tensor_t& in) {
+                    return copy_and_unpad_output(in);
                 },
-                [this](const vec_t& delta, vec_t& dst) {
+                [this](const tensor_t& delta, tensor_t& dst) {
                     return copy_and_pad_delta(delta, dst);
                 },
-                [this](const vec_t& p_delta,
-                       const vec_t& out, vec_t& c_delta) {
+                [this](const tensor_t& p_delta,
+                       const tensor_t& out, tensor_t& c_delta) {
                     return Base::backward_activation(p_delta, out, c_delta);
                 },
                 &deconv_layer_worker_storage_);
@@ -397,18 +390,15 @@ private:
         params_.tbl      = tbl;
     }
 
-    void init_workers() {
-        for (deconv_layer_worker_specific_storage& cws :
-                deconv_layer_worker_storage_) {
-            if (params_.pad_type == padding::same) {
-                cws.curr_out_buf_.resize(params_.in.size(), float_t(0));
-                cws.curr_delta_padded.resize(params_.out.size(), float_t(0));
-            } else {
-                cws.curr_out_buf_.clear();
-            }
-        }
+    void init() {
+        deconv_layer_worker_specific_storage& cws =  deconv_layer_worker_storage_;
+
         if (params_.pad_type == padding::same) {
-            curr_delta2_padded_.resize(params_.out.size(), float_t(0));
+            cws.curr_out_buf_.resize(1, vec_t(params_.in.size(), float_t(0)));
+            cws.curr_delta_padded.resize(1, vec_t(params_.out.size(), float_t(0)));
+        }
+        else {
+            cws.curr_out_buf_.clear();
         }
     }
 
@@ -450,53 +440,63 @@ private:
                 deconv_out_unpadded_length(in_height, window_height, h_stride, pad_type);
     }
 
-    void copy_and_pad_delta(const vec_t& delta, vec_t& dst) {
+    void copy_and_pad_delta(const tensor_t& delta, tensor_t& delta_padded) {
         if (params_.pad_type == padding::valid) {
-            dst = delta;
+            delta_padded = delta;
         }
         else {
-            for (cnn_size_t c = 0; c < params_.in.depth_; c++) {
-                float_t *pdst = &dst[params_.in.get_index(0, 0, c)];
-                const float_t *pin = &delta[params_.in.get_index(0, 0, c)];
+            for (cnn_size_t sample = 0; sample < delta.size(); sample++) {
+                vec_t& dst = delta_padded[sample];
+                const vec_t& src = delta[sample];
 
-                for (cnn_size_t y = 0; y < params_.in.height_; y++, pdst +=
-                    params_.in.width_, pin += params_.in.width_) {
-                    std::copy(pin, pin + params_.in.width_, pdst);
+                for (cnn_size_t c = 0; c < params_.in.depth_; c++) {
+                    float_t *pdst = &dst[params_.in.get_index(0, 0, c)];
+                    const float_t *pin = &src[params_.in.get_index(0, 0, c)];
+
+                    for (cnn_size_t y = 0; y < params_.in.height_; y++, pdst +=
+                        params_.in.width_, pin += params_.in.width_) {
+                        std::copy(pin, pin + params_.in.width_, pdst);
+                    }
                 }
             }
         }
     }
 
-    void copy_and_unpad_output(const vec_t& out, int worker_index) {
+    void copy_and_unpad_output(const tensor_t& out) {
         deconv_layer_worker_specific_storage& cws =
-            deconv_layer_worker_storage_[worker_index];
+            deconv_layer_worker_storage_;
 
-        cws.curr_out_buf_ = vec_t(params_.out_unpadded.width_*
+        cws.curr_out_buf_ = tensor_t(out.size(), vec_t(params_.out_unpadded.width_*
                                   params_.out_unpadded.height_*
-                                  params_.out_unpadded.depth_,0);
-        vec_t* dst = &cws.curr_out_buf_;
+                                  params_.out_unpadded.depth_,0));
+        tensor_t* dst_tensor = &cws.curr_out_buf_;
 
         if (params_.pad_type == padding::valid) {
             cws.curr_out_unpadded_ = &out;
         } else {
             // make unpadded version in order to restore scale in fprop/bprop
-            cnn_size_t idx = 0;
-            for (cnn_size_t c = 0; c < params_.out_unpadded.depth_; c++) {
-                float_t *pimg = &(*dst)[params_.out_unpadded.get_index(0, 0, c)];
-                idx = params_.out.get_index(floor(params_.weight.width_ / 2),
-                                             floor(params_.weight.height_ / 2), c);
-                const float_t *pout = &out[idx];
-                for (cnn_size_t y = floor(params_.weight.height_ / 2);
-                    y < params_.out_unpadded.height_ + floor(params_.weight.height_ / 2);
-                    y++,
-                    pout += params_.out.width_,
-                    pimg += params_.out_unpadded.width_) {
-                    std::copy(pout,
-                              pout + params_.out_unpadded.width_,
-                              pimg);
+            for (cnn_size_t sample = 0; sample < out.size(); sample++) {
+                cnn_size_t idx = 0;
+                vec_t& dst = (*dst_tensor)[sample];
+
+                for (cnn_size_t c = 0; c < params_.out_unpadded.depth_; c++) {
+                    float_t *pimg = &dst[params_.out_unpadded.get_index(0, 0, c)];
+                    idx = params_.out.get_index(floor(params_.weight.width_ / 2),
+                                                 floor(params_.weight.height_ / 2), c);
+                    const float_t *pout = &out[sample][idx];
+
+                    for (cnn_size_t y = floor(params_.weight.height_ / 2);
+                        y < params_.out_unpadded.height_ + floor(params_.weight.height_ / 2);
+                        y++,
+                        pout += params_.out.width_,
+                        pimg += params_.out_unpadded.width_) {
+                        std::copy(pout,
+                                  pout + params_.out_unpadded.width_,
+                                  pimg);
+                    }
                 }
+                cws.curr_out_unpadded_ = &cws.curr_out_buf_;
             }
-            cws.curr_out_unpadded_ = &cws.curr_out_buf_;
         }
     }
 
@@ -507,8 +507,7 @@ private:
     backend_t backend_type_;
 
     /* Workers buffers */
-    vec_t curr_delta2_padded_;
-    std::vector<deconv_layer_worker_specific_storage> deconv_layer_worker_storage_;
+    deconv_layer_worker_specific_storage deconv_layer_worker_storage_;
 };
 
 } // namespace tiny_cnn

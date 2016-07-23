@@ -230,21 +230,23 @@ class quantized_convolutional_layer : public feedforward_layer<Activation> {
      * @param in_data      input vectors of this layer (data, weight, bias)
      * @param out_data     output vectors
      **/
-    void forward_propagation(cnn_size_t                 worker_index,
-                             const std::vector<vec_t*>& in_data,
-                             std::vector<vec_t*>&       out_data) {
+    void forward_propagation(const std::vector<tensor_t*>& in_data,
+                             std::vector<tensor_t*>&       out_data) {
         // launch convolutional kernel
         if (in_data.size() == 3) {
-            Base::backend_->conv2d_q(worker_index, in_data, out_data);
-            // activations
-            vec_t& out     = *out_data[0];
-            const vec_t& a = *out_data[1];
+            Base::backend_->conv2d_q(in_data, out_data);
 
-            for_i(this->get_parallelize(), params_.out.size(), [&](int i) {
-                out[i] = this->h_.f(a, i);
+            // activations
+            for_i(in_data[0]->size(), [&](int sample) {
+                vec_t& out = (*out_data[0])[sample];
+                const vec_t& a = (*out_data[1])[sample];
+
+                for (cnn_size_t i = 0; i < params_.out.size(); i++) {
+                    out[i] = this->h_.f(a, i);
+                };
             });
         } else if (in_data.size() == 6) {
-            Base::backend_->conv2d_eq(worker_index, in_data, out_data);
+            Base::backend_->conv2d_eq(in_data, out_data);
         }
     }
 
@@ -256,13 +258,11 @@ class quantized_convolutional_layer : public feedforward_layer<Activation> {
      * @param out_grad     gradient of output vectors (i-th vector correspond with out_data[i])
      * @param in_grad      gradient of input vectors (i-th vector correspond with in_data[i])
      **/
-    void back_propagation(cnn_size_t                 worker_index,
-                          const std::vector<vec_t*>& in_data,
-                          const std::vector<vec_t*>& out_data,
-                          std::vector<vec_t*>&       out_grad,
-                          std::vector<vec_t*>&       in_grad) {
-        Base::backend_->conv2d_q(worker_index, in_data,
-                               out_data, out_grad, in_grad);
+    void back_propagation(const std::vector<tensor_t*>& in_data,
+                          const std::vector<tensor_t*>& out_data,
+                          std::vector<tensor_t*>&       out_grad,
+                          std::vector<tensor_t*>&       in_grad) {
+        Base::backend_->conv2d_q(in_data, out_data, out_grad, in_grad);
       }
 
     std::vector<index3d<cnn_size_t>> in_shape() const override {
@@ -345,20 +345,13 @@ class quantized_convolutional_layer : public feedforward_layer<Activation> {
         params_.tbl      = tbl;
     }
 
-    void init_workers() {
-        for (conv_layer_worker_specific_storage& cws :
-                conv_layer_worker_storage_) {
-            if (params_.pad_type == padding::same) {
-                cws.prev_out_buf_.resize(params_.in_padded.size(), float_t(0));
-                cws.prev_delta_padded_.resize(
-                    params_.in_padded.size(), float_t(0));
-            } else {
-                cws.prev_out_buf_.clear();
-            }
-        }
-
+    void init() {
         if (params_.pad_type == padding::same) {
-            prev_delta2_padded_.resize(params_.in_padded.size(), float_t(0));
+            cws_.prev_out_buf_.resize(1, vec_t(params_.in_padded.size(), float_t(0)));
+            cws_.prev_delta_padded_.resize(1, vec_t(params_.in_padded.size(), float_t(0)));
+        }
+        else {
+            cws_.prev_out_buf_.clear();
         }
     }
 
@@ -401,55 +394,61 @@ class quantized_convolutional_layer : public feedforward_layer<Activation> {
                conv_out_length(in_height, window_height, h_stride, pad_type);
     }
 
-    void set_worker_count(cnn_size_t worker_count) override {
-        Base::set_worker_count(worker_count);
-        conv_layer_worker_storage_.resize(worker_count);
-        init_workers();
-    }
+    void copy_and_pad_input(const tensor_t& in) {
+        conv_layer_worker_specific_storage& cws = cws_;
+        
+        cnn_size_t sample_count = in.size();
 
-    void copy_and_pad_input(const vec_t& in, int worker_index) {
-        conv_layer_worker_specific_storage& cws =
-            conv_layer_worker_storage_[worker_index];
+        cws.prev_out_padded_.resize(sample_count);
 
-        vec_t* dst = &cws.prev_out_buf_;
+        if (params_.pad_type == padding::same) {
+            cws.prev_out_buf_.resize(sample_count, cws.prev_out_buf_[0]);
+            cws.prev_delta_padded_.resize(sample_count, cws.prev_delta_padded_[0]);
+        }
 
-        if (params_.pad_type == padding::valid) {
-            cws.prev_out_padded_ = &in;
-        } else {
-            // make padded version in order to avoid corner-case in fprop/bprop
-            cnn_size_t idx = 0;
-            for (cnn_size_t c = 0; c < params_.in.depth_; c++) {
-                idx = params_.in_padded.get_index(
-                                    params_.weight.width_  / 2,
-                                    params_.weight.height_ / 2, c);
-                float_t *pimg = &(*dst)[idx];
-                const float_t *pin = &in[params_.in.get_index(0, 0, c)];
-
-                for (cnn_size_t y = 0; y < params_.in.height_; y++) {
-                    std::copy(pin, pin + params_.in.width_, pimg);
-                    pin += params_.in.width_;
-                    pimg += params_.in_padded.width_;
-                }
+        for (cnn_size_t sample = 0; sample < sample_count; ++sample) {
+            if (params_.pad_type == padding::valid) {
+                cws.prev_out_padded_[sample] = &(in[sample]);
             }
-            cws.prev_out_padded_ = &cws.prev_out_buf_;
+            else {
+                vec_t* dst = &cws.prev_out_buf_[sample];
+
+                // make padded version in order to avoid corner-case in fprop/bprop
+                for (cnn_size_t c = 0; c < params_.in.depth_; c++) {
+                    float_t *pimg = &(*dst)[params_.in_padded.get_index(params_.weight.width_ / 2, params_.weight.height_ / 2, c)];
+                    const float_t *pin = &in[sample][params_.in.get_index(0, 0, c)];
+
+                    for (cnn_size_t y = 0; y < params_.in.height_; y++, pin += params_.in.width_, pimg += params_.in_padded.width_) {
+                        std::copy(pin, pin + params_.in.width_, pimg);
+                    }
+                }
+
+                cws.prev_out_padded_[sample] = &(cws.prev_out_buf_[sample]);
+            }
         }
     }
 
-    void copy_and_unpad_delta(const vec_t& delta, vec_t& dst) {
+    void copy_and_unpad_delta(const tensor_t& delta, tensor_t& delta_unpadded) {
         if (params_.pad_type == padding::valid) {
-            dst = delta;
-        } else {
-            cnn_size_t idx = 0;
-            for (cnn_size_t c = 0; c < params_.in.depth_; c++) {
-                float_t *pdst = &dst[params_.in.get_index(0, 0, c)];
-                idx = params_.in_padded.get_index(params_.weight.width_  / 2,
-                                     params_.weight.height_ / 2, c);
-                const float_t *pin = &delta[idx];
+            delta_unpadded = delta;
+        }
+        else {
+            for (cnn_size_t sample = 0; sample < delta.size(); sample++) {
+                cnn_size_t idx = 0;
+                const vec_t& src = delta[sample];
+                vec_t& dst = delta_unpadded[sample];
 
-                for (cnn_size_t y = 0; y < params_.in.height_; y++) {
-                    std::copy(pin, pin + params_.in.width_, pdst);
-                    pdst += params_.in.width_;
-                    pin += params_.in_padded.width_;
+                for (cnn_size_t c = 0; c < params_.in.depth_; c++) {
+                    float_t *pdst = &dst[params_.in.get_index(0, 0, c)];
+                    idx = params_.in_padded.get_index(params_.weight.width_ / 2,
+                        params_.weight.height_ / 2, c);
+                    const float_t *pin = &src[idx];
+
+                    for (cnn_size_t y = 0; y < params_.in.height_; y++) {
+                        std::copy(pin, pin + params_.in.width_, pdst);
+                        pdst += params_.in.width_;
+                        pin += params_.in_padded.width_;
+                    }
                 }
             }
         }
@@ -461,39 +460,39 @@ class quantized_convolutional_layer : public feedforward_layer<Activation> {
         // allocate new backend
         if (backend_type == backend_t::tiny_cnn) {
             backend = std::make_shared<core::tiny_backend>(&params_,
-                [this](const vec_t& in, int worker_index) {
-                    return copy_and_pad_input(in, worker_index);
+                [this](const tensor_t& in) {
+                    return copy_and_pad_input(in);
                 },
-                [this](const vec_t& delta, vec_t& dst) {
+                [this](const tensor_t& delta, tensor_t& dst) {
                     return copy_and_unpad_delta(delta, dst);
                 },
-                [this](const vec_t& p_delta,
-                       const vec_t& out, vec_t& c_delta) {
+                [this](const tensor_t& p_delta,
+                       const tensor_t& out, tensor_t& c_delta) {
                     return Base::backward_activation(p_delta, out, c_delta);
                 },
-                &conv_layer_worker_storage_);
+                &cws_);
         } else if (backend_type == backend_t::nnpack) {
             backend = std::make_shared<core::nnp_backend>(&params_,
-                [this](const vec_t& in, int worker_index) {
-                    return copy_and_pad_input(in, worker_index);
+                [this](const tensor_t& in) {
+                    return copy_and_pad_input(in);
                 },
-                &conv_layer_worker_storage_);
+                &cws_);
         } else if (backend_type == backend_t::libdnn) {
             backend = std::make_shared<core::dnn_backend>();
 #ifdef CNN_USE_AVX
         } else if (backend_type == backend_t::avx) {
             backend = std::make_shared<core::avx_backend>(&params_,
-                [this](const vec_t& in, int worker_index) {
-                    return copy_and_pad_input(in, worker_index);
+                [this](const tensor_t& in) {
+                    return copy_and_pad_input(in);
                 },
-                [this](const vec_t& delta, vec_t& dst) {
+                [this](const tensor_t& delta, tensor_t& dst) {
                     return copy_and_unpad_delta(delta, dst);
                 },
-                [this](const vec_t& p_delta,
-                       const vec_t& out, vec_t& c_delta) {
+                [this](const tensor_t& p_delta,
+                       const tensor_t& out, tensor_t& c_delta) {
                     return Base::backward_activation(p_delta, out, c_delta);
                 },
-                &conv_layer_worker_storage_);
+                &cws_);
 #endif
         } else {
             throw nn_error("Not supported backend type.");
@@ -515,8 +514,7 @@ class quantized_convolutional_layer : public feedforward_layer<Activation> {
     //backend_t backend_type_;
 
     /* Workers buffers */
-    vec_t prev_delta2_padded_;
-    std::vector<conv_layer_worker_specific_storage> conv_layer_worker_storage_;
+    conv_layer_worker_specific_storage cws_;
 };
 
 }  // namespace tiny_cnn

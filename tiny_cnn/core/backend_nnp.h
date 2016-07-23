@@ -85,15 +85,13 @@ class nnp_backend : public backend {
         kernels::nnp_conv2d_kernel(*params_c_, in, W, bias, a);
     }
 
-    void conv2d_q(cnn_size_t                 index,
-                  const std::vector<vec_t*>& in_data,
-                  std::vector<vec_t*>&       out_data) {
+    void conv2d_q(const std::vector<tensor_t*>& in_data,
+                  std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
-    void conv2d_eq(cnn_size_t                 index,
-                   const std::vector<vec_t*>& in_data,
-                   std::vector<vec_t*>&       out_data) {
+    void conv2d_eq(const std::vector<tensor_t*>& in_data,
+                   std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
@@ -104,11 +102,10 @@ class nnp_backend : public backend {
         throw nn_error("NNPACK does not support back propagation.");
     }
 
-    void conv2d_q(cnn_size_t                 index,
-                  const std::vector<vec_t*>& in_data,
-                  const std::vector<vec_t*>& out_data,
-                  std::vector<vec_t*>&       out_grad,
-                  std::vector<vec_t*>&       in_grad) {
+    void conv2d_q(const std::vector<tensor_t*>& in_data,
+                  const std::vector<tensor_t*>& out_data,
+                  std::vector<tensor_t*>&       out_grad,
+                  std::vector<tensor_t*>&       in_grad) {
         throw nn_error("NNPACK does not support back propagation.");
     }
 
@@ -116,15 +113,13 @@ class nnp_backend : public backend {
                   std::vector<tensor_t*>&       out_data) {
     }
 
-    void deconv2d_q(cnn_size_t                 index,
-                    const std::vector<vec_t*>& in_data,
-                    std::vector<vec_t*>&       out_data) {
+    void deconv2d_q(const std::vector<tensor_t*>& in_data,
+                    std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
-    void deconv2d_eq(cnn_size_t                 index,
-                     const std::vector<vec_t*>& in_data,
-                     std::vector<vec_t*>&       out_data) {
+    void deconv2d_eq(const std::vector<tensor_t*>& in_data,
+                     std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
@@ -135,11 +130,10 @@ class nnp_backend : public backend {
         throw nn_error("NNPACK does not support back propagation.");
     }
 
-    void deconv2d_q(cnn_size_t                 index,
-                    const std::vector<vec_t*>& in_data,
-                    const std::vector<vec_t*>& out_data,
-                    std::vector<vec_t*>&       out_grad,
-                    std::vector<vec_t*>&       in_grad) {
+    void deconv2d_q(const std::vector<tensor_t*>& in_data,
+                    const std::vector<tensor_t*>& out_data,
+                    std::vector<tensor_t*>&       out_grad,
+                    std::vector<tensor_t*>&       in_grad) {
         throw nn_error("NNPACK does not support back propagation.");
     }
 
@@ -181,15 +175,13 @@ class nnp_backend : public backend {
             in, W, b, a, layer_->get_parallelize());
     }
 
-    void fully_q(cnn_size_t                 index,
-                 const std::vector<vec_t*>& in_data,
-                 std::vector<vec_t*>&       out_data) {
+    void fully_q(const std::vector<tensor_t*>& in_data,
+                 std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
-    void fully_eq(cnn_size_t                 index,
-                  const std::vector<vec_t*>& in_data,
-                  std::vector<vec_t*>&       out_data) {
+    void fully_eq(const std::vector<tensor_t*>& in_data,
+                  std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
@@ -200,11 +192,10 @@ class nnp_backend : public backend {
         throw nn_error("NNPACK does not support back propagation.");
     }
 
-    void fully_q(cnn_size_t                 index,
-                 const std::vector<vec_t*>& in_data,
-                 const std::vector<vec_t*>& out_data,
-                 std::vector<vec_t*>&       out_grad,
-                 std::vector<vec_t*>&       in_grad) {
+    void fully_q(const std::vector<tensor_t*>& in_data,
+                 const std::vector<tensor_t*>& out_data,
+                 std::vector<tensor_t*>&       out_grad,
+                 std::vector<tensor_t*>&       in_grad) {
         throw nn_error("NNPACK does not support back propagation.");
     }
 

@@ -226,7 +226,7 @@ public:
     }
 
     void forward_propagation(const std::vector<tensor_t*>& in_data,
-                             std::vector<tensor_t*>&       out_data) {
+                             std::vector<tensor_t*>&       out_data) override {
         // launch deconvolutional kernel
         Base::backend_->deconv2d(in_data, out_data);
 
@@ -252,9 +252,8 @@ public:
     void back_propagation(const std::vector<tensor_t*>& in_data,
                           const std::vector<tensor_t*>& out_data,
                           std::vector<tensor_t*>&       out_grad,
-                          std::vector<tensor_t*>&       in_grad) {
-        Base::backend_->deconv2d(in_data, out_data,
-                                out_grad, in_grad);
+                          std::vector<tensor_t*>&       in_grad) override {
+        Base::backend_->deconv2d(in_data, out_data, out_grad, in_grad);
     }
 
     std::vector<index3d<cnn_size_t>> in_shape() const override {
@@ -466,7 +465,7 @@ private:
 
         cws.curr_out_buf_ = tensor_t(out.size(), vec_t(params_.out_unpadded.width_*
                                      params_.out_unpadded.height_*
-                                     params_.out_unpadded.depth_,0);
+                                     params_.out_unpadded.depth_,0));
         tensor_t* dst_tensor = &cws.curr_out_buf_;
 
         if (params_.pad_type == padding::valid) {

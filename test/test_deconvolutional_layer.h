@@ -159,21 +159,34 @@ TEST(deconvolutional, fprop2) {
 
     deconvolutional_layer<sigmoid> l(2, 2, 3, 1, 2, padding::same);
 
-    vec_t in(4), out(32), a(32), weight(18), bias(2);
+    auto create_simple_tensor = [](size_t vector_size) {
+        return tensor_t(1, vec_t(vector_size));
+    };
+
+    tensor_t in_tensor     = create_simple_tensor(4)
+           , out_tensor    = create_simple_tensor(32)
+           , a_tensor      = create_simple_tensor(32)
+           , weight_tensor = create_simple_tensor(18)
+           , bias_tensor   = create_simple_tensor(2);
+
+    // short-hand references to the payload vectors
+    vec_t &in = in_tensor[0]
+        , &out = out_tensor[0]
+        , &weight = weight_tensor[0];
 
     ASSERT_EQ(l.in_shape()[1].size(), 18); // weight
 
     uniform_rand(in.begin(), in.end(), -1.0, 1.0);
 
-    std::vector<vec_t*> in_data, out_data;
-    in_data.push_back(&in);
-    in_data.push_back(&weight);
-    in_data.push_back(&bias);
-    out_data.push_back(&out);
-    out_data.push_back(&a);
-    l.setup(false, 1);
+    std::vector<tensor_t*> in_data, out_data;
+    in_data.push_back(&in_tensor);
+    in_data.push_back(&weight_tensor);
+    in_data.push_back(&bias_tensor);
+    out_data.push_back(&out_tensor);
+    out_data.push_back(&a_tensor);
+    l.setup(false);
     {
-        l.forward_propagation(0, in_data, out_data);
+        l.forward_propagation(in_data, out_data);
 
         for (auto o: out)
             EXPECT_DOUBLE_EQ(o, (tiny_cnn::float_t)0.5);
@@ -191,7 +204,7 @@ TEST(deconvolutional, fprop2) {
     in[2] = 3;  in[3] = 0;
 
     {
-        l.forward_propagation(0, in_data, out_data);
+        l.forward_propagation(in_data, out_data);
 
         EXPECT_NEAR(0.5000000, out[0], 1E-5);
         EXPECT_NEAR(0.5249792, out[1], 1E-5);

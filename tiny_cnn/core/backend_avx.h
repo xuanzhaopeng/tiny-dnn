@@ -99,15 +99,13 @@ class avx_backend : public backend {
             in, W, bias, a, layer_->get_parallelize());
     }
 
-    void conv2d_q(cnn_size_t                 index,
-                const std::vector<vec_t*>& in_data,
-                std::vector<vec_t*>&       out_data) {
+    void conv2d_q(const std::vector<tensor_t*>& in_data,
+                  std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
-    void conv2d_eq(cnn_size_t                 index,
-                const std::vector<vec_t*>& in_data,
-                std::vector<vec_t*>&       out_data) {
+    void conv2d_eq(const std::vector<tensor_t*>& in_data,
+                   std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
@@ -141,11 +139,10 @@ class avx_backend : public backend {
         }
     }
 
-    void conv2d_q(cnn_size_t                 index,
-                const std::vector<vec_t*>& in_data,
-                const std::vector<vec_t*>& out_data,
-                std::vector<vec_t*>&       out_grad,
-                std::vector<vec_t*>&       in_grad) {
+    void conv2d_q(const std::vector<tensor_t*>& in_data,
+                  const std::vector<tensor_t*>& out_data,
+                  std::vector<tensor_t*>&       out_grad,
+                  std::vector<tensor_t*>&       in_grad) {
         throw nn_error("not implemented yet.");
     }
 
@@ -166,15 +163,13 @@ class avx_backend : public backend {
         a = *(*deconv_layer_worker_storage_).curr_out_unpadded_;
     }
 
-    void deconv2d_q(cnn_size_t                  index,
-                  const std::vector<vec_t*>&  in_data,
-                  std::vector<vec_t*>&        out_data) {
+    void deconv2d_q(const std::vector<tensor_t*>&  in_data,
+                    std::vector<tensor_t*>&        out_data) {
         throw nn_error("not implemented yet.");
     }
 
-    void deconv2d_eq(cnn_size_t                  index,
-                  const std::vector<vec_t*>&  in_data,
-                  std::vector<vec_t*>&        out_data) {
+    void deconv2d_eq(const std::vector<tensor_t*>&  in_data,
+                     std::vector<tensor_t*>&        out_data) {
         throw nn_error("not implemented yet.");
     }
 
@@ -206,11 +201,10 @@ class avx_backend : public backend {
             prev_out, W, dW, db, curr_delta, prev_delta);
     }
 
-    void deconv2d_q(cnn_size_t                 index,
-                  const std::vector<vec_t*>& in_data,
-                  const std::vector<vec_t*>& out_data,
-                  std::vector<vec_t*>&       out_grad,
-                  std::vector<vec_t*>&       in_grad) {
+    void deconv2d_q(const std::vector<tensor_t*>& in_data,
+                    const std::vector<tensor_t*>& out_data,
+                    std::vector<tensor_t*>&       out_grad,
+                    std::vector<tensor_t*>&       in_grad) {
         throw nn_error("not implemented yet.");
     }
 
@@ -257,15 +251,13 @@ class avx_backend : public backend {
             a, layer_->get_parallelize());
     }
 
-    void fully_q(cnn_size_t                 index,
-               const std::vector<vec_t*>& in_data,
-               std::vector<vec_t*>&       out_data) {
+    void fully_q(const std::vector<tensor_t*>& in_data,
+                 std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
-    void fully_eq(cnn_size_t                 index,
-               const std::vector<vec_t*>& in_data,
-               std::vector<vec_t*>&       out_data) {
+    void fully_eq(const std::vector<tensor_t*>& in_data,
+                  std::vector<tensor_t*>&       out_data) {
         throw nn_error("not implemented yet.");
     }
 
@@ -286,11 +278,10 @@ class avx_backend : public backend {
             W, dW, prev_delta, curr_delta, db, layer_->get_parallelize());
     }
 
-    void fully_q(cnn_size_t                 index,
-               const std::vector<vec_t*>& in_data,
-               const std::vector<vec_t*>& out_data,
-               std::vector<vec_t*>&       out_grad,
-               std::vector<vec_t*>&       in_grad) {
+    void fully_q(const std::vector<tensor_t*>& in_data,
+                 const std::vector<tensor_t*>& out_data,
+                 std::vector<tensor_t*>&       out_grad,
+                 std::vector<tensor_t*>&       in_grad) {
         throw nn_error("not implemented yet.");
     }
 

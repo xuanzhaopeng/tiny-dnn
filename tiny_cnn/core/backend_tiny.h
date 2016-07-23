@@ -26,6 +26,7 @@
 */
 #pragma once
 
+#include "tiny_cnn/config.h"
 #include "tiny_cnn/core/backend.h"
 
 #include "tiny_cnn/core/kernels/tiny_conv2d_kernel.h"
@@ -36,7 +37,9 @@
 #include "tiny_cnn/core/kernels/tiny_deconv2d_back_kernel.h"
 #include "tiny_cnn/core/kernels/tiny_maxpool_kernel.h"
 #include "tiny_cnn/core/kernels/tiny_fully_connected_kernel.h"
+#ifdef CNN_USE_GEMMLOWP
 #include "tiny_cnn/core/kernels/tiny_quantized_fully_connected_kernel.h"
+#endif
 
 namespace tiny_cnn {
 namespace core {
@@ -93,7 +96,7 @@ class tiny_backend : public backend {
         copy_and_pad_input(*in_data[0]);
         const vec_t& W     = (*in_data[1])[0];
         const vec_t& bias  = (*in_data[2])[0];
-        tensor_t&       a  = *out_data[1];
+        tensor_t&    a     = *out_data[1];
         const std::vector<const vec_t*> &in = (*conv_layer_worker_storage_).prev_out_padded_; // input // NOLINT
 
         fill_tensor(a, float_t(0));
@@ -103,47 +106,48 @@ class tiny_backend : public backend {
     }
 
     // quantized convolution
-    void conv2d_q(cnn_size_t                 index,
-                  const std::vector<vec_t*>& in_data,
-                  std::vector<vec_t*>&       out_data) {
-        copy_and_pad_input(*in_data[0], static_cast<int>(index));
-        const vec_t& W    = *in_data[1];
-        const vec_t& bias = *in_data[2];
-        vec_t&       a    = *out_data[1];
-        const vec_t &in   = *((*conv_layer_worker_storage_)[index].prev_out_padded_); // input // NOLINT
+    void conv2d_q(const std::vector<tensor_t*>& in_data,
+                  std::vector<tensor_t*>&       out_data) {
+        copy_and_pad_input(*in_data[0]);
+        const vec_t& W    = (*in_data[1])[0];
+        const vec_t& bias = (*in_data[2])[0];
+        tensor_t&    a    = *out_data[1];
+        const std::vector<const vec_t*> &in = (*conv_layer_worker_storage_).prev_out_padded_; // input // NOLINT
 
-        std::fill(a.begin(), a.end(), float_t(0));
+        fill_tensor(a, float_t(0));
 
-        kernels::tiny_quantized_conv2d_kernel(*params_c_,
-            in, W, bias, a, layer_->get_parallelize());
+        for (cnn_size_t i = 0; i < in.size(); i++) {
+            kernels::tiny_quantized_conv2d_kernel(*params_c_,
+                *in[i], W, bias, a[i], layer_->get_parallelize());
+        }
     }
 
     // efficient quantization without abundant quantization/dequantization
-    void conv2d_eq(cnn_size_t                 index,
-                   const std::vector<vec_t*>& in_data,
-                   std::vector<vec_t*>&       out_data) {
-        copy_and_pad_input(*in_data[0], static_cast<int>(index));
-        const vec_t& in   = *((*conv_layer_worker_storage_)[index].prev_out_padded_);
-        const vec_t& W    = *in_data[1];
-        const vec_t& bias = *in_data[2];
-        const vec_t& in_r = *in_data[3];
-        const vec_t& W_r  = *in_data[4];
-        const vec_t& b_r  = *in_data[5];
-        vec_t&       a    = *out_data[1];
-        vec_t&       a_r  = *out_data[2];
+    void conv2d_eq(const std::vector<tensor_t*>& in_data,
+                   std::vector<tensor_t*>&       out_data) {
+        copy_and_pad_input(*in_data[0]);
+        const vec_t&    W    = (*in_data[1])[0];
+        const vec_t&    bias = (*in_data[2])[0];
+        const tensor_t& in_r = *in_data[3];
+        const vec_t&    W_r  = (*in_data[4])[0];
+        const vec_t&    b_r  = (*in_data[5])[0];
+        tensor_t&       a    = *out_data[1];
+        tensor_t&       a_r  = *out_data[2];
 
-        std::fill(a.begin(), a.end(), uint8_t(0));
+        const std::vector<const vec_t*> &in = (*conv_layer_worker_storage_).prev_out_padded_; // input // NOLINT
 
-        kernels::tiny_quantized_conv2d_kernel(*params_c_,
-            in, W, bias, in_r, W_r, b_r, a, a_r, layer_->get_parallelize());
+        fill_tensor(a, float_t(0));
+        for (cnn_size_t i = 0; i < in.size(); i++) {
+            kernels::tiny_quantized_conv2d_kernel(*params_c_,
+                *in[i], W, bias, in_r[i], W_r, b_r, a[i], a_r[i], layer_->get_parallelize());
+        }
     }
 
     void conv2d(const std::vector<tensor_t*>& in_data,
                 const std::vector<tensor_t*>& out_data,
                 std::vector<tensor_t*>&       out_grad,
                 std::vector<tensor_t*>&       in_grad) {
-        conv_layer_worker_specific_storage& cws =
-            (*conv_layer_worker_storage_);
+        conv_layer_worker_specific_storage& cws = (*conv_layer_worker_storage_);
 
         std::vector<const vec_t*>& prev_out = cws.prev_out_padded_;
         const vec_t& W  = (*in_data[1])[0];
@@ -169,32 +173,32 @@ class tiny_backend : public backend {
         }
     }
 
-    void conv2d_q(cnn_size_t                 index,
-                  const std::vector<vec_t*>& in_data,
-                  const std::vector<vec_t*>& out_data,
-                  std::vector<vec_t*>&       out_grad,
-                  std::vector<vec_t*>&       in_grad) {
-        conv_layer_worker_specific_storage& cws =
-            (*conv_layer_worker_storage_)[index];
+    void conv2d_q(const std::vector<tensor_t*>& in_data,
+                  const std::vector<tensor_t*>& out_data,
+                  std::vector<tensor_t*>&       out_grad,
+                  std::vector<tensor_t*>&       in_grad) {
+        conv_layer_worker_specific_storage& cws = (*conv_layer_worker_storage_);
 
-        const vec_t& prev_out = *(cws.prev_out_padded_);
-        const vec_t& W  = *in_data[1];
-        vec_t&       dW = *in_grad[1];
-        vec_t&       db = *in_grad[2];
-        vec_t&       curr_delta = *out_grad[1];
-        vec_t*       prev_delta = (params_c_->pad_type == padding::same) ?
-                                   &cws.prev_delta_padded_ : in_grad[0];
+        std::vector<const vec_t*>& prev_out = cws.prev_out_padded_;
+        const vec_t& W = (*in_data[1])[0];
+        tensor_t&    dW = *in_grad[1];
+        tensor_t&    db = *in_grad[2];
+        tensor_t&    curr_delta = *out_grad[1];
+        tensor_t*    prev_delta = (params_c_->pad_type == padding::same) ?
+            &cws.prev_delta_padded_ : in_grad[0];
 
         assert(W.size() == params_c_->weight.size());
-        assert(dW.size() == params_c_->weight.size());
-        assert(curr_delta.size() ==  layer_->out_shape()[0].size());
+        assert(dW[0].size() == params_c_->weight.size());
+        assert(curr_delta[0].size() == layer_->out_shape()[0].size());
 
         backward_activation(*out_grad[0], *out_data[0], curr_delta);
 
-        std::fill(prev_delta->begin(), prev_delta->end(), float_t(0));
+        fill_tensor(*prev_delta, float_t(0));
 
-        kernels::tiny_quantized_conv2d_back_kernel(*params_c_,
-            prev_out, W, dW, db, curr_delta, prev_delta);
+        for (cnn_size_t i = 0; i < prev_out.size(); i++) {
+            kernels::tiny_quantized_conv2d_back_kernel(*params_c_,
+                *prev_out[i], W, dW[i], db[i], curr_delta[i], &(*prev_delta)[i]);
+        }
 
         if (params_c_->pad_type == padding::same) {
             copy_and_unpad_delta(cws.prev_delta_padded_, *in_grad[0]);
@@ -204,10 +208,10 @@ class tiny_backend : public backend {
     void deconv2d(const std::vector<tensor_t*>&  in_data,
                   std::vector<tensor_t*>&        out_data) {
         (*deconv_layer_worker_storage_).prev_out_ = in_data[0];
-        const vec_t& W    = (*in_data[1])[0];
-        const vec_t& bias = (*in_data[2])[0];
-        tensor_t&       a   = *out_data[1];
-        const tensor_t &in  = *in_data[0]; // input
+        const vec_t&    W    = (*in_data[1])[0];
+        const vec_t&    bias = (*in_data[2])[0];
+        tensor_t&       a    = *out_data[1];
+        const tensor_t &in   = *in_data[0]; // input
 
         fill_tensor(a, float_t(0));
 
@@ -219,45 +223,47 @@ class tiny_backend : public backend {
     }
 
     // quantized deconvolution
-    void deconv2d_q(cnn_size_t                  index,
-                    const std::vector<vec_t*>&  in_data,
-                    std::vector<vec_t*>&        out_data) {
-        (*deconv_layer_worker_storage_)[index].prev_out_ = in_data[0];
-        const vec_t& in   = *in_data[0];
-        const vec_t& W    = *in_data[1];
-        const vec_t& bias = *in_data[2];
-        vec_t&       a    = *out_data[1];
+    void deconv2d_q(const std::vector<tensor_t*>&  in_data,
+                    std::vector<tensor_t*>&        out_data) {
+        (*deconv_layer_worker_storage_).prev_out_ = in_data[0];
+        const tensor_t &in   =  *in_data[0]; // input
+        const vec_t&    W    = (*in_data[1])[0];
+        const vec_t&    bias = (*in_data[2])[0];
+        tensor_t&       a    =  *out_data[1];
 
-        std::fill(a.begin(), a.end(), float_t(0));
+        fill_tensor(a, float_t(0));
 
-        kernels::tiny_quantized_deconv2d_kernel(*params_d_,
-            in, W, bias, a, layer_->get_parallelize());
+        for (cnn_size_t i = 0; i < in.size(); i++) {
+            kernels::tiny_quantized_deconv2d_kernel(*params_d_,
+                in[i], W, bias, a[i], layer_->get_parallelize());
+        }
 
-        copy_and_unpad_output(a, static_cast<int>(index));
-        a = *(*deconv_layer_worker_storage_)[index].curr_out_unpadded_;
+        copy_and_unpad_output(a);
+        a = *(*deconv_layer_worker_storage_).curr_out_unpadded_;
     }
 
     // efficient quantization without abundant quantization/dequantization
-    void deconv2d_eq(cnn_size_t                  index,
-                     const std::vector<vec_t*>&  in_data,
-                     std::vector<vec_t*>&        out_data) {
-        (*deconv_layer_worker_storage_)[index].prev_out_ = in_data[0];
-        const vec_t& in   = *in_data[0];
-        const vec_t& W    = *in_data[1];
-        const vec_t& bias = *in_data[2];
-        const vec_t& in_r = *in_data[3];
-        const vec_t& W_r  = *in_data[4];
-        const vec_t& b_r  = *in_data[5];
-        vec_t&       a    = *out_data[1];
-        vec_t&       a_r  = *out_data[2];
+    void deconv2d_eq(const std::vector<tensor_t*>&  in_data,
+                     std::vector<tensor_t*>&        out_data) {
+        (*deconv_layer_worker_storage_).prev_out_ = in_data[0];
+        const tensor_t &in   =  *in_data[0]; // input
+        const vec_t&    W    = (*in_data[1])[0];
+        const vec_t&    bias = (*in_data[2])[0];
+        const tensor_t& in_r =  *in_data[3];
+        const vec_t&    W_r  = (*in_data[4])[0];
+        const vec_t&    b_r  = (*in_data[5])[0];
+        tensor_t&       a    = *out_data[1];
+        tensor_t&       a_r  = *out_data[2];
 
-        std::fill(a.begin(), a.end(), float_t(0));
+        fill_tensor(a, float_t(0));
 
-        kernels::tiny_quantized_deconv2d_kernel(*params_d_,
-            in, W, bias, in_r, W_r, b_r, a, a_r, layer_->get_parallelize());
+        for (cnn_size_t i = 0; i < in.size(); i++) {
+            kernels::tiny_quantized_deconv2d_kernel(*params_d_,
+                in[i], W, bias, in_r[i], W_r, b_r, a[i], a_r[i], layer_->get_parallelize());
+        }
 
-        copy_and_unpad_output(a, static_cast<int>(index));
-        a = *(*deconv_layer_worker_storage_)[index].curr_out_unpadded_;
+        copy_and_unpad_output(a);
+        a = *(*deconv_layer_worker_storage_).curr_out_unpadded_;
     }
 
     void deconv2d(const std::vector<tensor_t*>& in_data,
@@ -265,8 +271,7 @@ class tiny_backend : public backend {
                   std::vector<tensor_t*>&       out_grad,
                   std::vector<tensor_t*>&       in_grad) {
 
-        deconv_layer_worker_specific_storage& cws =
-            (*deconv_layer_worker_storage_);
+        deconv_layer_worker_specific_storage& cws = (*deconv_layer_worker_storage_);
         if (params_d_->pad_type == padding::same)
             copy_and_pad_delta(cws.curr_delta_padded, *in_grad[0]);
 
@@ -289,34 +294,34 @@ class tiny_backend : public backend {
             prev_out, W, dW, db, curr_delta, prev_delta);
     }
 
-    void deconv2d_q(cnn_size_t                 index,
-                    const std::vector<vec_t*>& in_data,
-                    const std::vector<vec_t*>& out_data,
-                    std::vector<vec_t*>&       out_grad,
-                    std::vector<vec_t*>&       in_grad) {
+    void deconv2d_q(const std::vector<tensor_t*>& in_data,
+                    const std::vector<tensor_t*>& out_data,
+                    std::vector<tensor_t*>&       out_grad,
+                    std::vector<tensor_t*>&       in_grad) {
 
-        deconv_layer_worker_specific_storage& cws =
-            (*deconv_layer_worker_storage_)[index];
+        deconv_layer_worker_specific_storage& cws = (*deconv_layer_worker_storage_);
         if (params_d_->pad_type == padding::same)
             copy_and_pad_delta(cws.curr_delta_padded, *in_grad[0]);
 
-        const vec_t& prev_out = *(cws.prev_out_);
-        const vec_t& W = *in_data[1];
-        vec_t&       dW = *in_grad[1];
-        vec_t&       db = *in_grad[2];
-        vec_t&       curr_delta = (params_d_->pad_type == padding::same) ? cws.curr_delta_padded : *out_grad[1];
-        vec_t*       prev_delta = in_grad[0];
+        const tensor_t& prev_out = *(cws.prev_out_);
+        const vec_t& W = (*in_data[1])[0];
+        tensor_t&    dW = *in_grad[1];
+        tensor_t&    db = *in_grad[2];
+        tensor_t&    curr_delta = (params_d_->pad_type == padding::same) ? cws.curr_delta_padded : *out_grad[1];
+        tensor_t*    prev_delta = in_grad[0];
 
         assert(W.size() == params_d_->weight.size());
-        assert(dW.size() == params_d_->weight.size());
-        assert(curr_delta.size() ==  layer_->out_shape()[0].size());
+        assert(dW[0].size() == params_d_->weight.size());
+        assert(curr_delta[0].size() == layer_->out_shape()[0].size());
 
         backward_activation(*out_grad[0], *out_data[0], curr_delta);
 
-        std::fill(prev_delta->begin(), prev_delta->end(), float_t(0));
+        fill_tensor(*prev_delta, float_t(0));
 
-        kernels::tiny_quantized_deconv2d_back_kernel(*params_d_,
-            prev_out, W, dW, db, curr_delta, prev_delta);
+        for (cnn_size_t i = 0; i < prev_out.size(); i++) {
+            kernels::tiny_quantized_deconv2d_back_kernel(*params_d_,
+                prev_out[i], W, dW[i], db[i], curr_delta[i], &(*prev_delta)[i]);
+        }
     }
 
     void matmul() {
@@ -360,48 +365,54 @@ class tiny_backend : public backend {
             a, layer_->get_parallelize());
     }
 
-    void fully_q(cnn_size_t                 index,
-                 const std::vector<vec_t*>& in_data,
-                 std::vector<vec_t*>&       out_data) {
-        const vec_t& in  = *in_data[0];
-        const vec_t& W   = *in_data[1];
-        vec_t&       b   = *in_data[2];
-        vec_t&       a   = *out_data[1];
+    void fully_q(const std::vector<tensor_t*>& in_data,
+                 std::vector<tensor_t*>&       out_data) {
+#ifdef CNN_USE_GEMMLOWP
+        const tensor_t& in = *in_data[0];
+        const vec_t&    W  = (*in_data[1])[0];
+        vec_t&          b  = (*in_data[2])[0];
+        tensor_t&       a  = *out_data[1];
 
-        CNN_UNREFERENCED_PARAMETER(index);
-
-        kernels::tiny_quantized_fully_connected_kernel(*params_f_,
-            in, W, b, a, layer_->get_parallelize());
+        for (cnn_size_t i = 0; i < in.size(); i++) {
+            kernels::tiny_quantized_fully_connected_kernel(*params_f_,
+                in[i], W, b, a[i], layer_->get_parallelize());
+        }
+#else
+        throw nn_not_implemented_error("quantized fully op requires gemmlowp library. please define CNN_USE_GEMMLOWP");
+#endif
     }
 
-    void fully_eq(cnn_size_t                 index,
-                  const std::vector<vec_t*>& in_data,
-                  std::vector<vec_t*>&       out_data) {
-        const vec_t& in   = *in_data[0];
-        const vec_t& W    = *in_data[1];
-        vec_t&       b    = *in_data[2];
-        const vec_t& in_r = *in_data[3];
-        const vec_t& W_r  = *in_data[4];
-        const vec_t& b_r  = *in_data[5];
-        vec_t&       a    = *out_data[1];
-        vec_t&       a_r  = *out_data[2];
+    void fully_eq(const std::vector<tensor_t*>& in_data,
+                  std::vector<tensor_t*>&       out_data) {
+#ifdef CNN_USE_GEMMLOWP
+        const tensor_t& in   =  *in_data[0];
+        const vec_t&    W    = (*in_data[1])[0];
+        vec_t&          b    = (*in_data[2])[0];
+        const tensor_t& in_r =  *in_data[3];
+        const vec_t&    W_r  = (*in_data[4])[0];
+        const vec_t&    b_r  = (*in_data[5])[0];
+        tensor_t&       a    =  *out_data[1];
+        tensor_t&       a_r  =  *out_data[2];
 
-        CNN_UNREFERENCED_PARAMETER(index);
-
-        kernels::tiny_quantized_fully_connected_kernel(*params_f_,
-            in, W, b, in_r, W_r, b_r, a, a_r, layer_->get_parallelize());
+        for (cnn_size_t i = 0; i < in.size(); i++) {
+            kernels::tiny_quantized_fully_connected_kernel(*params_f_,
+                in[i], W, b, in_r[i], W_r, b_r, a[i], a_r[i], layer_->get_parallelize());
+        }
+#else
+        throw nn_not_implemented_error("quantized fully op requires gemmlowp library. please define CNN_USE_GEMMLOWP");
+#endif
     }
 
     void fully(const std::vector<tensor_t*>& in_data,
                const std::vector<tensor_t*>& out_data,
                std::vector<tensor_t*>&       out_grad,
                std::vector<tensor_t*>&       in_grad) {
-        const tensor_t& prev_out   = *in_data[0];
+        const tensor_t& prev_out   =  *in_data[0];
         const vec_t&    W          = (*in_data[1])[0];
-        tensor_t&       dW         = *in_grad[1];
-        tensor_t&       db         = *in_grad[2];
-        tensor_t&       prev_delta = *in_grad[0];
-        tensor_t&       curr_delta = *out_grad[1];
+        tensor_t&       dW         =  *in_grad[1];
+        tensor_t&       db         =  *in_grad[2];
+        tensor_t&       prev_delta =  *in_grad[0];
+        tensor_t&       curr_delta =  *out_grad[1];
 
         backward_activation(*out_grad[0], *out_data[0], curr_delta);
 
@@ -409,24 +420,27 @@ class tiny_backend : public backend {
             W, dW, prev_delta, curr_delta, db, layer_->get_parallelize());
     }
 
-    void fully_q(cnn_size_t                 index,
-                 const std::vector<vec_t*>& in_data,
-                 const std::vector<vec_t*>& out_data,
-                 std::vector<vec_t*>&       out_grad,
-                 std::vector<vec_t*>&       in_grad) {
-        const vec_t& prev_out   = *in_data[0];
-        const vec_t& W          = *in_data[1];
-        vec_t&       dW         = *in_grad[1];
-        vec_t&       db         = *in_grad[2];
-        vec_t&       prev_delta = *in_grad[0];
-        vec_t&       curr_delta = *out_grad[1];
-
-        CNN_UNREFERENCED_PARAMETER(index);
+    void fully_q(const std::vector<tensor_t*>& in_data,
+                 const std::vector<tensor_t*>& out_data,
+                 std::vector<tensor_t*>&       out_grad,
+                 std::vector<tensor_t*>&       in_grad) {
+#ifdef CNN_USE_GEMMLOWP
+        const tensor_t& prev_out   =  *in_data[0];
+        const vec_t&    W          = (*in_data[1])[0];
+        tensor_t&       dW         =  *in_grad[1];
+        tensor_t&       db         =  *in_grad[2];
+        tensor_t&       prev_delta =  *in_grad[0];
+        tensor_t&       curr_delta =  *out_grad[1];
 
         backward_activation(*out_grad[0], *out_data[0], curr_delta);
 
-        kernels::tiny_quantized_fully_connected_back_kernel(*params_f_, prev_out,
-            W, dW, prev_delta, curr_delta, db, layer_->get_parallelize());
+        for (cnn_size_t i = 0; i < prev_out.size(); i++) {
+            kernels::tiny_quantized_fully_connected_back_kernel(*params_f_, prev_out[i],
+                W, dW[i], prev_delta[i], curr_delta[i], db[i], layer_->get_parallelize());
+        }
+#else
+        throw nn_not_implemented_error("quantized fully op requires gemmlowp library. please define CNN_USE_GEMMLOWP");
+#endif
     }
 
     backend_t get_type() const { return backend_t::tiny_cnn; }
