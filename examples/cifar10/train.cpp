@@ -87,6 +87,8 @@ void train_cifar10(string data_dir_path, double learning_rate, ostream& log) {
         cout << t.elapsed() << "s elapsed." << endl;
         tiny_cnn::result res = nn.test(test_images, test_labels);
         log << res.num_success << "/" << res.num_total << endl;
+        optimizer.alpha *= static_cast<tiny_cnn::float_t>(sqrt(n_minibatch) * learning_rate);
+        optimizer.alpha = std::max((tiny_cnn::float_t)0.00001, optimizer.alpha);
 
         disp.restart(train_images.size());
         t.restart();
